@@ -1,0 +1,8 @@
+# Игнорировать БД
+task_manager.db
+
+# Игнорировать __pycache__ во всех папках
+__pycache__/
+*.pyc
+
+.coverage
