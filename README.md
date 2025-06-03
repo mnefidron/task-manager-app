@@ -36,8 +36,15 @@
 
 ---
 
+## 🛠 Тесты
+
+- python -m unittest tests.py -v
+
+---
+
 ## 📦 Установка и запуск
 
 1. **Установите зависимости:**
    ```bash
    pip install customtkinter tkcalendar
+
