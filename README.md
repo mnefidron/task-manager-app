@@ -37,9 +37,9 @@
 ---
 
 ## 🛠 Тесты
-
-- python -m unittest tests.py -v
-
+```bash
+    python run_all_tests.py
+```
 ---
 
 ## 📦 Установка и запуск
