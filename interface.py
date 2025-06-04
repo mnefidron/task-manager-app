@@ -1,9 +1,10 @@
+# interface.py
 import customtkinter as ctk
 import crud
 import notifications
-from datetime import datetime, timedelta
-import tkinter as tk
+from datetime import datetime
 from tkcalendar import DateEntry
+import tkinter as tk
 import json
 import os
 
@@ -16,13 +17,12 @@ class TaskManager(ctk.CTk):
         self.title("Система управления задачами")
         self.geometry("1075x700")
         self.resizable(False, False)
-
+        
         # Путь к файлу настроек
         self.settings_file = os.path.join(os.path.dirname(__file__), "settings.json")
-
-        # Загрузка настроек при старте
+        # Загрузка настроек
         self.load_settings()
-
+        
         # Кнопка настроек
         self.settings_button = ctk.CTkButton(
             self,
@@ -35,110 +35,173 @@ class TaskManager(ctk.CTk):
         self.create_widgets()
         self.load_tasks()
         self.check_notifications()
-    
-    def toggle_fullscreen(self):
-        self.fullscreen = not self.fullscreen
-        self.attributes("-fullscreen", self.fullscreen)
-        if not self.fullscreen:
-            self.geometry("1075x700")  # Восстановить размер
 
-        self.create_widgets()
-        self.load_tasks()
-        
-        # Запуск проверки уведомлений каждые 5 минут
-        self.check_notifications()
-    
     def create_widgets(self):
         # Заголовок
-        self.title_label = ctk.CTkLabel(self, text="Kanban Доска", font=ctk.CTkFont(size=24, weight="bold"))
+        self.title_label = ctk.CTkLabel(
+            self,
+            text="Kanban Доска",
+            font=ctk.CTkFont(size=24, weight="bold")
+        )
         self.title_label.pack(pady=10)
-        
+
         # Кнопка добавления задачи
-        self.add_button = ctk.CTkButton(self, text="Добавить задачу", command=self.open_add_task_window)
+        self.add_button = ctk.CTkButton(
+            self,
+            text="Добавить задачу",
+            command=self.open_add_task_window
+        )
         self.add_button.place(x=900, y=20)
-        
-        # Колонки Kanban
+
+        # Колонки Kanban с заголовками и скролл-баром
         self.columns = {
-            "To Do": ctk.CTkFrame(self, width=330, height=600),
-            "In Progress": ctk.CTkFrame(self, width=330, height=600),
-            "Done": ctk.CTkFrame(self, width=330, height=600)
+            "To Do": {"scroll_frame": None, "tasks": []},
+            "In Progress": {"scroll_frame": None, "tasks": []},
+            "Done": {"scroll_frame": None, "tasks": []}
         }
-        
+
         x_pos = 20
-        for column in self.columns.values():
-            column.place(x=x_pos, y=60)
+        for status in self.columns:
+            col_frame = ctk.CTkFrame(self, width=330, height=600)
+            col_frame.place(x=x_pos, y=60)
+
+            # Заголовок колонки
+            col_title = ctk.CTkLabel(
+                col_frame,
+                text=status,
+                font=ctk.CTkFont(size=16, weight="bold"),
+                anchor="center"
+            )
+            col_title.pack(pady=(0, 5), fill="x")
+
+            # Прокручиваемый фрейм для задач
+            scroll_frame = ctk.CTkScrollableFrame(
+                col_frame,
+                width=310,
+                height=530
+            )
+            scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+            self.columns[status]["scroll_frame"] = scroll_frame
+            self.columns[status]["tasks"] = []
             x_pos += 340
-        
+
+        # Список задач
         self.task_widgets = {"To Do": [], "In Progress": [], "Done": []}
 
+    def open_add_task_window(self):
+        """Открывает окно добавления задачи"""
+        AddEditTaskWindow(self, mode="add")
+
+    def open_edit_task_window(self, task):
+        """Открывает окно редактирования задачи"""
+        AddEditTaskWindow(self, mode="edit", task=task)
+
     def load_tasks(self):
-        for status in self.task_widgets:
-            for widget in self.task_widgets[status]:
+        for status in self.columns:
+            for widget in self.columns[status]["tasks"]:
                 widget.destroy()
-            self.task_widgets[status] = []
-        
+            self.columns[status]["tasks"].clear()
+
         tasks = crud.get_tasks()
-        
         for task in tasks:
             task_id, title, description, deadline, priority, status, assignees = task
-            
-            task_frame = ctk.CTkFrame(self.columns[status], width=310, height=100)
+
+            task_frame = ctk.CTkFrame(self.columns[status]["scroll_frame"], width=310, height=100)
             task_frame.pack(pady=5, padx=5, fill="x")
-            
+
             # Цвет по приоритету
             priority_colors = {
-                "низкий": "#d4edda",  # бледно-зеленый
-                "средний": "#fff3cd", # бледно-оранжевый
-                "высокий": "#f8d7da"  # бледно-красный
+                "низкий": "#d4edda",
+                "средний": "#fff3cd",
+                "высокий": "#f8d7da"
             }
             task_frame.configure(fg_color=priority_colors.get(priority.lower(), "#ffffff"))
-            
+
             # Заголовок задачи (чёрный текст)
-            title_label = ctk.CTkLabel(task_frame, text=title, font=ctk.CTkFont(weight="bold"), text_color="black")
+            title_label = ctk.CTkLabel(
+                task_frame,
+                text=title,
+                font=ctk.CTkFont(weight="bold"),
+                text_color="black"
+            )
             title_label.pack(anchor="w", padx=5, pady=2)
-            
-            # Описание задачи (чёрный текст)
-            desc_label = ctk.CTkLabel(task_frame, text=description[:50] + ("..." if len(description) > 50 else ""), 
-                                    font=ctk.CTkFont(size=12), text_color="black")
+
+            # Описание задачи
+            desc_label = ctk.CTkLabel(
+                task_frame,
+                text=description[:50] + ("..." if len(description) > 50 else ""),
+                font=ctk.CTkFont(size=12),
+                text_color="black"
+            )
             desc_label.pack(anchor="w", padx=5, pady=2)
-            
-            # Дедлайн и исполнители (чёрный текст)
+
+            # Дедлайн и исполнители
             info_frame = ctk.CTkFrame(task_frame, fg_color="transparent")
             info_frame.pack(fill="x", padx=5, pady=2)
-            
-            deadline_label = ctk.CTkLabel(info_frame, text=f"До: {deadline}", font=ctk.CTkFont(size=10), text_color="black")
+
+            deadline_label = ctk.CTkLabel(
+                info_frame,
+                text=f"До: {deadline}",
+                font=ctk.CTkFont(size=10),
+                text_color="black"
+            )
             deadline_label.pack(side="left")
-            
-            assignees_label = ctk.CTkLabel(info_frame, text=f"Исполнители: {assignees}", font=ctk.CTkFont(size=10), text_color="black")
+
+            assignees_label = ctk.CTkLabel(
+                info_frame,
+                text=f"Исполнители: {assignees}",
+                font=ctk.CTkFont(size=10),
+                text_color="black"
+            )
             assignees_label.pack(side="right")
-            
-            # Кнопки действий (чёрный текст)
+
+            # Кнопки действий
             action_frame = ctk.CTkFrame(task_frame, fg_color="transparent")
             action_frame.pack(fill="x", padx=5, pady=2)
-            
-            view_button = ctk.CTkButton(action_frame, text="👁", width=20, command=lambda t=task: self.view_task(t), text_color="black")
+
+            view_button = ctk.CTkButton(
+                action_frame,
+                text="👁",
+                width=20,
+                command=lambda t=task: self.view_task(t),
+                text_color="black"
+            )
             view_button.pack(side="left", padx=2)
-            
-            edit_button = ctk.CTkButton(action_frame, text="✏️", width=20, command=lambda t=task: self.open_edit_task_window(t), text_color="black")
+
+            edit_button = ctk.CTkButton(
+                action_frame,
+                text="✏️",
+                width=20,
+                command=lambda t=task: self.open_edit_task_window(t),
+                text_color="black"
+            )
             edit_button.pack(side="left", padx=2)
-            
-            delete_button = ctk.CTkButton(action_frame, text="🗑", width=20, command=lambda t=task: self.delete_task(t), text_color="black")
+
+            delete_button = ctk.CTkButton(
+                action_frame,
+                text="🗑",
+                width=20,
+                command=lambda t=task: self.delete_task(t),
+                text_color="black"
+            )
             delete_button.pack(side="left", padx=2)
-            
-            # Drag-and-drop
-            task_frame.bind("<Button-1>", self.start_drag)
+
+            # Drag-and-Drop
+            task_frame.bind("<Button-1>", lambda e, tf=task_frame, stat=status, tid=task_id: self.start_drag(e, tf, stat, tid))
             task_frame.bind("<B1-Motion>", self.do_drag)
             task_frame.bind("<ButtonRelease-1>", lambda e, tf=task_frame, stat=status, tid=task_id: self.end_drag(e, tf, stat, tid))
-            
+
+            self.columns[status]["tasks"].append(task_frame)
             self.task_widgets[status].append(task_frame)
-    
-    def start_drag(self, event):
+
+    def start_drag(self, event, task_frame, status, task_id):
         self.drag_data = {
-            "widget": event.widget,
+            "widget": task_frame,
             "start_x": event.x,
             "start_y": event.y,
-            "original_parent": event.widget.master,
-            "original_pos": event.widget.winfo_y()
+            "original_status": status,
+            "task_id": task_id
         }
 
     def do_drag(self, event):
@@ -148,14 +211,19 @@ class TaskManager(ctk.CTk):
         widget.place(x=x, y=y)
 
     def end_drag(self, event, widget, original_status, task_id):
-        # Очистка
-        widget.pack_forget()
         widget.place_forget()
+        widget.pack_propagate(True)
+        widget.pack(pady=5, padx=5, fill="x")
 
-        # Проверка, в какую колонку попала задача
         new_status = None
-        for col_status, col_frame in self.columns.items():
-            if self.is_in_frame(event, col_frame):
+        for col_status, col_data in self.columns.items():
+            col_frame = col_data["scroll_frame"].master
+            frame_x = col_frame.winfo_rootx()
+            frame_y = col_frame.winfo_rooty()
+            frame_width = col_frame.winfo_width()
+            frame_height = col_frame.winfo_height()
+
+            if frame_x < event.x_root < frame_x + frame_width and frame_y < event.y_root < frame_y + frame_height:
                 new_status = col_status
                 break
 
@@ -163,79 +231,62 @@ class TaskManager(ctk.CTk):
             crud.update_task_status(task_id, new_status)
             self.load_tasks()
         else:
-            # Возвращаем на место
-            self.drag_data["original_parent"].pack_propagate(True)
-            widget.pack(pady=5, padx=5, fill="x")
-    
-    def is_in_frame(self, event, frame):
-        x_root = event.x_root
-        y_root = event.y_root
+            # Возвращаем в исходную колонку
+            self.drag_data["original_status"] = original_status
+            self.drag_data["widget"].pack(pady=5, padx=5, fill="x")
 
-        frame_x1 = frame.winfo_rootx()
-        frame_y1 = frame.winfo_rooty()
-        frame_x2 = frame_x1 + frame.winfo_width()
-        frame_y2 = frame_y1 + frame.winfo_height()
-
-        return frame_x1 < x_root < frame_x2 and frame_y1 < y_root < frame_y2
-    
-    def open_add_task_window(self):
-        AddEditTaskWindow(self, mode="add")
-    
-    def open_edit_task_window(self, task):
-        AddEditTaskWindow(self, mode="edit", task=task)
-    
     def view_task(self, task):
         task_window = ctk.CTkToplevel(self)
         task_window.title("Просмотр задачи")
         task_window.geometry("400x300")
         task_window.grab_set()
-        
         task_id, title, description, deadline, priority, status, assignees = task
-        
+
         ctk.CTkLabel(task_window, text=f"Название: {title}", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
         ctk.CTkLabel(task_window, text="Описание:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10)
         ctk.CTkLabel(task_window, text=description, wraplength=380).pack(pady=5, padx=10, fill="x")
-        
+
         info_frame = ctk.CTkFrame(task_window, fg_color="transparent")
         info_frame.pack(fill="x", padx=10)
-        
         ctk.CTkLabel(info_frame, text=f"Дедлайн: {deadline}").pack(side="left")
         ctk.CTkLabel(info_frame, text=f"Приоритет: {priority}").pack(side="left", padx=10)
         ctk.CTkLabel(info_frame, text=f"Статус: {status}").pack(side="left", padx=10)
-        
+
         ctk.CTkLabel(task_window, text="Исполнители:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10)
         assignees_list = ", ".join(assignees.split(",")) if assignees else "Нет исполнителей"
         ctk.CTkLabel(task_window, text=assignees_list).pack(pady=5, padx=10)
-        
-        close_button = ctk.CTkButton(task_window, text="Закрыть", command=task_window.destroy)
-        close_button.pack(pady=10)
-    
+        ctk.CTkButton(task_window, text="Закрыть", command=task_window.destroy).pack(pady=10)
+
     def delete_task(self, task):
         if tk.messagebox.askyesno("Удалить задачу", "Вы действительно хотите удалить эту задачу?"):
             crud.delete_task(task[0])
             self.load_tasks()
-    
+
     def check_notifications(self):
         tasks = crud.get_tasks()
         current_time = datetime.now()
-        
+
+        # Очистка старых уведомлений
+        for frame in getattr(self, "active_notifications", []):
+            frame.destroy()
+        self.active_notifications = []
+
         for task in tasks:
             task_id, title, description, deadline, priority, status, assignees = task
-            
             try:
                 deadline_date = datetime.strptime(deadline, "%Y-%m-%d")
-                time_diff = deadline_date - current_time
-                
-                if 0 <= time_diff.days <= 1 and status != "Done":
+                time_diff = (deadline_date - current_time).days
+
+                if 0 <= time_diff <= 1 and status != "Done":
                     notifications.show_popup_notification(
                         self,
                         f"⚠️ Близкий дедлайн: {title}",
                         f"Задача: {title}\nДедлайн: {deadline_date.strftime('%d.%m.%Y')}"
                     )
             except ValueError:
-                pass  # Некорректный формат даты
-        
-        self.after(300000, self.check_notifications)  # Повторная проверка каждые 5 минут
+                pass
+
+        self.after(300000, self.check_notifications)
 
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
@@ -245,7 +296,6 @@ class TaskManager(ctk.CTk):
         settings_window.grab_set()
 
         ctk.CTkLabel(settings_window, text="Настройки внешнего вида", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=10)
-
         theme_label = ctk.CTkLabel(settings_window, text="Цветовая тема:")
         theme_label.pack(anchor="w", padx=20)
 
@@ -270,14 +320,13 @@ class TaskManager(ctk.CTk):
                 "Системная": "System"
             }
             ctk.set_appearance_mode(theme_map[selected_theme])
-            self.save_settings(theme_map[selected_theme])  # Сохраняем тему
+            self.save_settings(theme_map[selected_theme])
             settings_window.destroy()
 
         save_button = ctk.CTkButton(settings_window, text="Сохранить", command=save_and_close)
         save_button.pack(pady=15)
 
     def load_settings(self):
-        """Загружает настройки темы из файла"""
         if os.path.exists(self.settings_file):
             with open(self.settings_file, "r") as f:
                 settings = json.load(f)
@@ -285,10 +334,8 @@ class TaskManager(ctk.CTk):
                 ctk.set_appearance_mode(theme.capitalize())
 
     def save_settings(self, theme):
-        """Сохраняет выбранную тему в файл"""
-        settings = {"theme": theme.lower()}
         with open(self.settings_file, "w") as f:
-            json.dump(settings, f)
+            json.dump({"theme": theme.lower()}, f)
 
 class AddEditTaskWindow(ctk.CTkToplevel):
     def __init__(self, parent, mode, task=None):
@@ -296,68 +343,57 @@ class AddEditTaskWindow(ctk.CTkToplevel):
         self.parent = parent
         self.mode = mode
         self.task = task
-        
         self.title("Добавить задачу" if mode == "add" else "Редактировать задачу")
         self.geometry("500x500")
         self.grab_set()
-        
         self.create_widgets()
-    
+
     def create_widgets(self):
-        # Заголовок
+        # Заголовок задачи
         self.title_label = ctk.CTkLabel(self, text="Название задачи:", font=ctk.CTkFont(weight="bold"))
         self.title_label.pack(anchor="w", padx=20, pady=(10, 0))
-        
         self.title_entry = ctk.CTkEntry(self, width=460)
         self.title_entry.pack(padx=20, fill="x")
-        
-        # Описание
+
+        # Описание задачи
         self.desc_label = ctk.CTkLabel(self, text="Описание:", font=ctk.CTkFont(weight="bold"))
         self.desc_label.pack(anchor="w", padx=20, pady=(10, 0))
-        
         self.desc_entry = ctk.CTkTextbox(self, height=100)
         self.desc_entry.pack(padx=20, fill="x")
-        
+
         # Приоритет и статус
         info_frame = ctk.CTkFrame(self, fg_color="transparent")
         info_frame.pack(fill="x", padx=20, pady=10)
-        
+
         self.priority_label = ctk.CTkLabel(info_frame, text="Приоритет:", font=ctk.CTkFont(weight="bold"))
         self.priority_label.pack(side="left")
-        
         self.priority_combo = ctk.CTkComboBox(info_frame, values=["низкий", "средний", "высокий"])
         self.priority_combo.pack(side="left", padx=10)
-        
+
         self.status_label = ctk.CTkLabel(info_frame, text="Статус:", font=ctk.CTkFont(weight="bold"))
         self.status_label.pack(side="left")
-        
         self.status_combo = ctk.CTkComboBox(info_frame, values=["To Do", "In Progress", "Done"])
         self.status_combo.pack(side="left", padx=10)
-        
+
         # Дедлайн
         self.deadline_label = ctk.CTkLabel(self, text="Дедлайн:", font=ctk.CTkFont(weight="bold"))
-        self.deadline_label.pack(anchor="w", padx=20)
-        
-        self.deadline_picker = DateEntry(self, width=12, background='darkblue',
-                                         foreground='white', borderwidth=2)
+        self.deadline_label.pack(anchor="w", padx=20, pady=(10, 0))
+        self.deadline_picker = DateEntry(self, width=12, background='darkblue', foreground='white', borderwidth=2)
         self.deadline_picker.pack(padx=20, anchor="w")
-        
+
         # Исполнители
         self.assignees_label = ctk.CTkLabel(self, text="Исполнители:", font=ctk.CTkFont(weight="bold"))
         self.assignees_label.pack(anchor="w", padx=20, pady=(10, 0))
-        
+
         self.assignees_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.assignees_frame.pack(fill="x", padx=20)
-        
         self.assignees_list_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.assignees_list_frame.pack(fill="x", padx=20)
-        
         self.assignees_input = ctk.CTkEntry(self.assignees_frame, width=200)
         self.assignees_input.pack(side="left")
-        
         self.add_assignee_button = ctk.CTkButton(self.assignees_frame, text="+", width=30, command=self.add_assignee)
         self.add_assignee_button.pack(side="left", padx=5)
-        
+
         self.assignees = []
         if self.mode == "edit" and self.task:
             self.title_entry.insert(0, self.task[1])
@@ -383,7 +419,7 @@ class AddEditTaskWindow(ctk.CTkToplevel):
         self.save_button = ctk.CTkButton(self, text="Создать задачу" if self.mode == "add" else "Сохранить изменения", 
                                          command=self.save_task)
         self.save_button.pack(pady=20)
-    
+
     def add_assignee(self):
         name = self.assignees_input.get().strip()
         if name:
@@ -422,7 +458,3 @@ class AddEditTaskWindow(ctk.CTkToplevel):
         
         self.parent.load_tasks()
         self.destroy()
-
-if __name__ == "__main__":
-    app = TaskManager()
-    app.mainloop()
