@@ -18,10 +18,16 @@ class TaskManager(ctk.CTk):
         self.geometry("1075x700")
         self.resizable(False, False)
         
+        # Логируем начало
+        print("[DEBUG] Инициализация TaskManager завершена")
+        
         # Путь к файлу настроек
         self.settings_file = os.path.join(os.path.dirname(__file__), "settings.json")
         # Загрузка настроек
         self.load_settings()
+
+        self.check_notifications()  # Запуск первой проверки
+        self.after(300000, self.check_notifications)  # Повторная проверка каждые 5 минут
         
         # Кнопка настроек
         self.settings_button = ctk.CTkButton(
@@ -265,28 +271,24 @@ class TaskManager(ctk.CTk):
     def check_notifications(self):
         tasks = crud.get_tasks()
         current_time = datetime.now()
-
-        # Очистка старых уведомлений
-        for frame in getattr(self, "active_notifications", []):
-            frame.destroy()
-        self.active_notifications = []
-
+        
         for task in tasks:
             task_id, title, description, deadline, priority, status, assignees = task
+            
             try:
                 deadline_date = datetime.strptime(deadline, "%Y-%m-%d")
-                time_diff = (deadline_date - current_time).days
-
-                if 0 <= time_diff <= 1 and status != "Done":
+                time_diff = deadline_date - current_time
+                
+                if 0 <= time_diff.days <= 1 and status != "Done":
                     notifications.show_popup_notification(
                         self,
                         f"⚠️ Близкий дедлайн: {title}",
                         f"Задача: {title}\nДедлайн: {deadline_date.strftime('%d.%m.%Y')}"
                     )
             except ValueError:
-                pass
-
-        self.after(300000, self.check_notifications)
+                pass  # Некорректный формат даты
+        
+        self.after(300000, self.check_notifications)  # Повторная проверка каждые 5 минут
 
     def open_settings(self):
         settings_window = ctk.CTkToplevel(self)
